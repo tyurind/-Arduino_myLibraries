@@ -1,5 +1,9 @@
 For information on installing libraries, see: http://www.arduino.cc/en/Guide/Libraries
 
+# hardware
+
+- https://habr.com/ru/post/234477/
+
 
 # Manager links
 

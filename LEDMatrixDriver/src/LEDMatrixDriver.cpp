@@ -8,14 +8,15 @@
 #include "LEDMatrixDriver.hpp"
 #include <Arduino.h>
 
-LEDMatrixDriver::LEDMatrixDriver(uint8_t N, uint8_t ssPin, uint8_t* frameBuffer_):
+LEDMatrixDriver::LEDMatrixDriver(uint8_t N, uint8_t ssPin, uint8_t flags, uint8_t* fb):
 #ifdef USE_ADAFRUIT_GFX
 	Adafruit_GFX(N*8, N),
 #endif
 	N(N),
 	spiSettings(5000000, MSBFIRST, SPI_MODE0),
-	frameBuffer(frameBuffer_),
-	selfAllocated(frameBuffer_ == nullptr),
+	flags(flags),
+	frameBuffer(fb),
+	selfAllocated(fb == nullptr),
 	ssPin(ssPin)
 {
 	if (selfAllocated)
@@ -43,13 +44,13 @@ LEDMatrixDriver::~LEDMatrixDriver()
 		delete[] frameBuffer;
 }
 
-void LEDMatrixDriver::setPixel(uint16_t x, uint16_t y, bool enabled)
+void LEDMatrixDriver::setPixel(int16_t x, int16_t y, bool enabled)
 {
-	uint8_t* p = _getBufferPtr(x,y);
+	uint8_t* p = _getBufferPtr(x, y);
 	if (!p)
 		return;
 
-	uint16_t b = 7 - (x & 7);			//bit
+	uint16_t b = 7 - (x & 7);		//bit
 
 	if (enabled)
 		*p |=  (1<<b);
@@ -57,22 +58,20 @@ void LEDMatrixDriver::setPixel(uint16_t x, uint16_t y, bool enabled)
 		*p &= ~(1<<b);
 }
 
-bool LEDMatrixDriver::getPixel(uint16_t x, uint16_t y) const
+bool LEDMatrixDriver::getPixel(int16_t x, int16_t y) const
 {
-	uint8_t* p = _getBufferPtr(x,y);
+	uint8_t* p = _getBufferPtr(x, y);
 	if (!p)
 		return false;
 
-	uint16_t b = 7 - (x & 7);			//bit
+	uint16_t b = 7 - (x & 7);		//bit
 
 	return *p & (1 << b);
 }
 
-void LEDMatrixDriver::setColumn(uint16_t x, uint8_t value)
+void LEDMatrixDriver::setColumn(int16_t x, uint8_t value)
 {
-	if (x >= (8*N))
-		return;
-
+	//no need to check x, will be checked by setPixel
 	for (uint8_t y = 0; y < 8; ++y)
 	{
 		setPixel(x, y, value & 1);
@@ -85,8 +84,18 @@ void LEDMatrixDriver::setEnabled(bool enabled)
 	_sendCommand(ENABLE | (enabled ? 1: 0));
 }
 
+/**
+ * Set display intensity 
+ * 
+ * level:
+ * 	0 - lowest (1/32)
+ * 15 - highest (31/32)
+ */
+
 void LEDMatrixDriver::setIntensity(uint8_t level)
 {
+	//maximum intensity is 0xF;
+	if (level > 0xF) level = 0xF;		
 	_sendCommand(INTENSITY | level);
 }
 
@@ -102,9 +111,11 @@ void LEDMatrixDriver::setIntensity(uint8_t level)
  *
  * The command is sent to all drivers.
  */
-void LEDMatrixDriver::setScanLimit(uint8_t level)
+void LEDMatrixDriver::setScanLimit(uint8_t limit)
 {
-	_sendCommand(SCAN_LIMIT | level);
+	//7 == all digits
+	if (limit >= 0x7) limit = 7;
+	_sendCommand(SCAN_LIMIT | limit);
 }
 
 /**
@@ -139,8 +150,8 @@ void LEDMatrixDriver::setDigit(uint16_t digit, uint8_t value, bool dot)
 		return;
 
 	// The frameBuffer is organized as 8 rows of N bytes.
-	uint8_t row = digit % 8;
-	uint8_t controller = digit / 8;
+	uint8_t row = digit & 7;
+	uint8_t controller = digit >> 3;
 
 	frameBuffer[row * N + controller] = value | (dot ? 1<<7 : 0);
 }
@@ -149,6 +160,7 @@ void LEDMatrixDriver::_sendCommand(uint16_t command)
 {
 	SPI.beginTransaction(spiSettings);
 	digitalWrite(ssPin, 0);
+	//send the same command to all segments
 	for (uint8_t i = 0; i < N; ++i)
 	{
 		SPI.transfer16(command);
@@ -157,24 +169,48 @@ void LEDMatrixDriver::_sendCommand(uint16_t command)
 	SPI.endTransaction();
 }
 
+//a helper function used to reverse bits in a byte
+static void reverse(uint8_t& b) {
+   b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+   b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+   b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+}
+
 void LEDMatrixDriver::_displayRow(uint8_t row)
 {
+	//calculates row address based on flags
+	uint8_t address_row = flags & INVERT_Y ? 7 - row: row;
+
+	bool display_x_inverted = flags & INVERT_DISPLAY_X;
+	bool segment_x_inverted = flags & INVERT_SEGMENT_X;
+
+	//for x inverted display change iterating order
+	//inverting segments may still be needed!
+	int16_t from = display_x_inverted ? N-1:  0;		//start from ...
+	int16_t to =   display_x_inverted ? -1  : N;		//where to stop
+	int16_t step = display_x_inverted ? -1 :  1;		//directon
+
 	SPI.beginTransaction(spiSettings);
 	digitalWrite(ssPin, 0);
-	for (uint16_t d = 0; d < N; d++)
+
+	for (int16_t d = from; d != to; d += step)
 	{
-		uint16_t cmd = ((row + 1) << 8) | frameBuffer[d + row*N];
+		uint8_t data = frameBuffer[d + row*N];
+		if (segment_x_inverted)
+			reverse(data);
+		uint16_t cmd = ((address_row + 1) << 8) | data;
 		SPI.transfer16(cmd);
 	}
+
 	digitalWrite(ssPin, 1);
 	SPI.endTransaction();
 }
 
-uint8_t* LEDMatrixDriver::_getBufferPtr(uint16_t x, uint16_t y) const
+uint8_t* LEDMatrixDriver::_getBufferPtr(int16_t x, int16_t y) const
 {
-	if (y >= 8)
+	if ((y < 0) or (y >= 8))
 		return nullptr;
-	if (x >= (8*N))
+	if ((x < 0) or (x >= (8*N)))
 		return nullptr;
 
 	uint16_t B = x >> 3;		//byte
@@ -200,34 +236,42 @@ void LEDMatrixDriver::scroll( scrollDirection direction )
 			memmove(frameBuffer, frameBuffer + N, cnt);
 			memset(frameBuffer+cnt, 0, N);		// Clear last row
 			break;
-			
+
 		case scrollDirection::scrollDown:
 			cnt = 7*N; // moving 7 rows of N segments
 			memmove(frameBuffer+N, frameBuffer, cnt);
 			memset(frameBuffer, 0, N);		// Clear first row
 			break;
-			
+
 		case scrollDirection::scrollRight:
 			// Scrolling right needs to be done by bit shifting every uint8_t in the frame buffer
-			// Bits that overlap need to be carried to the next cell in a row
-			for( int i = 8*N; i >= 0; i-- )
+			// Carry is reset between rows
+			for (int y = 0; y < 8; y++)
 			{
-				uint8_t n = frameBuffer[i] & 1;
-				frameBuffer[i] >>= 1;
-				if( (i+1)%N > 0 )
-					frameBuffer[i+1] |= n<<7;
+				uint8_t carry = 0x00;
+				for (int x = 0; x < N; x++)
+				{
+					uint8_t& v = frameBuffer[y*N+x];
+					uint8_t newCarry = v & 1;
+					v = (carry << 7) | (v >> 1);
+					carry = newCarry;
+				}
 			}
 			break;
-			
+
 		case scrollDirection::scrollLeft:
 			// Scrolling left needs to be done by bit shifting every uint8_t in the frame buffer
-			// Bits that overlap need to be carried to the prev cell in a row
-			for( int i = 0; i < 8*N; i++ )
+			// Carry is reset between rows
+			for (int y = 0; y < 8; y++)
 			{
-				uint8_t n = frameBuffer[i] & B10000000;
-				frameBuffer[i] <<= 1;
-				if( i%N > 0 )
-					frameBuffer[i-1] |= n>>7;
+				uint8_t carry = 0x00;
+				for (int x = N-1; x >= 0; x--)
+				{
+					uint8_t& v = frameBuffer[y*N+x];
+					uint8_t newCarry = v & 0x80;
+					v = (carry >> 7) | (v << 1);
+					carry = newCarry;
+				}
 			}
 			break;
 	}

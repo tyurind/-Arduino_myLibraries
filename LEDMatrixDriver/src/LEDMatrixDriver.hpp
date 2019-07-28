@@ -41,9 +41,17 @@ class LEDMatrixDriver
 	
 	
 	public:
+		const static uint8_t INVERT_SEGMENT_X = 1;
+		const static uint8_t INVERT_DISPLAY_X = 2;
+		const static uint8_t INVERT_Y = 4;
+
 		//with N segments and ssPin as SS,
-		//an already allocated buffer can be provided as well
-		LEDMatrixDriver(uint8_t N, uint8_t ssPin, uint8_t* frameBuffer = nullptr);
+		//flags describe segment orientation (optional)
+		//an already allocated buffer can be provided as well (optional)
+		LEDMatrixDriver(uint8_t N, uint8_t ssPin, uint8_t flags = 0, uint8_t* frameBuffer = nullptr);
+		#ifdef USE_ADAFRUIT_GFX
+		virtual
+		#endif
 		~LEDMatrixDriver();
 
 		//we don't want to copy the object
@@ -60,14 +68,18 @@ class LEDMatrixDriver
 
 		//all these commands work on ALL segments
 		void setEnabled(bool enabled);
+		//display brightness: 0 - 15
 		void setIntensity(uint8_t level);
-		void setPixel(uint16_t x, uint16_t y, bool enabled);
-		bool getPixel(uint16_t x, uint16_t y) const;
-		void setColumn(uint16_t x, uint8_t value);
+		void setPixel(int16_t x, int16_t y, bool enabled);
+		bool getPixel(int16_t x, int16_t y) const;
+		//sets pixels in the column acording to value (LSB => y=0)
+		void setColumn(int16_t x, uint8_t value);
 		uint8_t getSegments() const {return N;}
+		
 		uint8_t* getFrameBuffer() const {return frameBuffer;}
 
 		//functions for 7-segment displays
+		//number of digits displayed (0 -> 1 digit, 7 -> 8 digits)
 		void setScanLimit(uint8_t level);
 		void setDecode(uint8_t mask);
 		void setDigit(uint16_t digit, uint8_t value, bool dot = false);
@@ -99,12 +111,13 @@ class LEDMatrixDriver
 		const static uint8_t BCD_BLANK =    0x0F;
 
 	private:
-		uint8_t* _getBufferPtr(uint16_t x, uint16_t y) const;
+		uint8_t* _getBufferPtr(int16_t x, int16_t y) const;
 		void _sendCommand(uint16_t command);
 		void _displayRow(uint8_t row);
 
 		const uint8_t N;
 		SPISettings spiSettings;
+		uint8_t flags;
 		uint8_t* frameBuffer;
 		bool selfAllocated;
 		uint8_t ssPin;
