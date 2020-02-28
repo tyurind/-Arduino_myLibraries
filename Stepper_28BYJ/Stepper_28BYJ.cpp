@@ -121,7 +121,7 @@ void Stepper_28BYJ::step(int steps_to_move)
  */
 void Stepper_28BYJ::stepMotor(int thisStep)
 {
-	Serial.println(thisStep);
+	// Serial.println(thisStep);
 	switch (thisStep) {
 		case 0:    // 0001
 			digitalWrite(motor_pin_1, LOW);
