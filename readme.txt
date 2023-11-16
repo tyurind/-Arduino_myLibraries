@@ -14,3 +14,13 @@ http://arduino.esp8266.com/stable/package_esp8266com_index.json
 https://mcudude.github.io/MicroCore/package_MCUdude_MicroCore_index.json
 https://dl.espressif.com/dl/package_esp32_index.json
 ```
+
+### Install
+
+See: https://spy-soft.net/usb-rubber-ducky-digispark-attiny85/
+
+
+```
+sudo apt install libusb-dev
+sudo udevadm control --reload-rules
+```
