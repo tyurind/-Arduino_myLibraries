@@ -17,10 +17,13 @@ https://dl.espressif.com/dl/package_esp32_index.json
 
 ### Install
 
-See: https://spy-soft.net/usb-rubber-ducky-digispark-attiny85/
+Проблемы с digispark
 
+See: https://spy-soft.net/usb-rubber-ducky-digispark-attiny85/
+See: https://digistump.com/wiki/digispark/tutorials/linuxtroubleshooting
 
 ```
-sudo apt install libusb-dev
+sudo apt install libusb-dev libusb-1.0-0 libusb-0.1-4 libusb-1.0-0-dev 
+sudo apt-get install lib32stdc++6
 sudo udevadm control --reload-rules
 ```
